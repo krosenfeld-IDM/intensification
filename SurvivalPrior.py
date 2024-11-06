@@ -26,49 +26,24 @@ from pandas.tseries.offsets import DateOffset,\
 ## For reference
 colors = ["#FF420E","#00ff07","#0078ff","#BF00BA"]
 
-def axes_setup(axes):
+def axes_setup(axes,inplace=True):
     axes.spines["left"].set_position(("axes",-0.025))
     axes.spines["top"].set_visible(False)
     axes.spines["right"].set_visible(False)
-    return axes
-
-def data_overview_plot(df):
-
-    fig, axes = plt.subplots(figsize=(14,5))
-    axes_setup(axes)
-    axes.spines["left"].set_color(colors[0])
-    axes.fill_between(df.index,0,df["cases"].values,
-                      alpha=0.2,edgecolor="None",facecolor=colors[0])
-    axes.plot(df["cases"],lw=4,color=colors[0])
-
-    ## Twin the axes and set up those spines
-    axes2 = axes.twinx()
-    axes2.spines["right"].set_position(("axes",1.025))
-    axes2.spines["top"].set_visible(False)
-    axes2.spines["left"].set_visible(False)
-    axes2.spines["bottom"].set_visible(False)
-    axes2.spines["right"].set_color(colors[2])
-    axes2.plot(df["births"],lw=4,color=colors[2])
-
-    ## Details
-    axes.set_ylabel("Reported measles cases",color=colors[0],labelpad=15)
-    axes2.set_ylabel("Estimated births",color=colors[2],labelpad=15)
-    axes.set_ylim((0,None))
-    axes.tick_params(axis="y",colors=colors[0])
-    axes2.tick_params(axis="y",colors=colors[2])
-    fig.tight_layout()  
-
-    return fig
+    if inplace:
+    	return None
+    else:
+    	return axes
 
 def model_overview(state,imm_profile,sias,survival,sf,result,phi,r_ls):
 
     ## Set up the figure
     fig = plt.figure(figsize=(14,9))
     gs = gridspec.GridSpec(6, 3, figure=fig)
-    vax_ax = axes_setup(fig.add_subplot(gs[:4,0]))
+    vax_ax = axes_setup(fig.add_subplot(gs[:4,0]),inplace=False)
     vax_leg = fig.add_subplot(gs[-1,0])
-    fit_ax = axes_setup(fig.add_subplot(gs[:3,1:3]))
-    rr_ax = axes_setup(fig.add_subplot(gs[3:,1:3],sharex=fit_ax))
+    fit_ax = axes_setup(fig.add_subplot(gs[:3,1:3]),inplace=False)
+    rr_ax = axes_setup(fig.add_subplot(gs[3:,1:3],sharex=fit_ax),inplace=False)
 
     ## Plot the vaccine derived immunity profile as a set of 
     ## stacked bars
