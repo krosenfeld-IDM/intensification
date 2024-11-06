@@ -192,8 +192,8 @@ if __name__ == "__main__":
     fig.savefig(os.path.join("_plots","model_inputs.png"))
     if _serialize:
         pickle.dump(fig, 
-                    open("..\\_plots\\cereal\\"
-                         "model_inputs.fig.pickle",
+                    open(os.path.join("pickle_jar",
+                         "model_inputs.fig.pickle"),
                          "wb"))
     if not _serialize:
         plt.show()
