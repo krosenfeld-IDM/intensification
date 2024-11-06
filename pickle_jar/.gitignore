@@ -1,0 +1,3 @@
+# Simple git ignore to create a landing space for pickle files
+*.pickle
+*.pkl
