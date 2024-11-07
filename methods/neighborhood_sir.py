@@ -2,15 +2,17 @@
 
 The posterior class for the regularized SIR model adjusted for 
 the incorporation of a spatial neighborhood to influence seasonality."""
-import sys
+import os
 
 ## Standard stuff
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 
 ## For matrix constructions
 from scipy.sparse import diags
+
+## For optimization
+from scipy.optimize import minimize
 
 class NeighborhoodPosterior(object):
 
@@ -472,3 +474,262 @@ class HoodRegularizedModel(object):
 
 		return lnp_beta + lnp_rt + lnp_S0
 
+## Some helper functions
+def get_age_pyramid(state,fname=os.path.join("_data","grid3_population_by_state.csv")):
+
+    ## Get the output from geopode
+    df = pd.read_csv(fname,index_col=0)\
+            .set_index(["state","age_bin"])
+    df = df.loc[state].reset_index()
+    population = int(np.round(df["total"].sum()))
+    
+    ## Make an age column, representing the start 
+    ## of the age bins
+    df["age"] = df["age_bin"].apply(lambda s: int(s.split()[0]))
+    df = df.sort_values("age")
+
+    ## Interpolate to a 
+    pyramid = df[["age","total"]].set_index("age")["total"]
+    pyramid = pyramid.reindex(np.arange(pyramid.index[-1]+5)).fillna(method="ffill")
+    pyramid.loc[1:4] = pyramid.loc[1:4]/4
+    pyramid.loc[5:] = pyramid.loc[5:]/5
+
+    ## Turn it into a distribution
+    pyramid = pyramid/population
+
+    return pyramid, population
+
+def prep_model_inputs(state,time_index,epi,cr,dists,mcv1_effic=0.825,mcv2_effic=0.95):
+
+    ## Start by aggregating the epi data
+    df = epi.resample("SMS").agg({"cases":"sum",
+                                  "rejected":"sum",
+                                  "births":"sum",
+                                  "births_var":"sum",
+                                  "mcv1":"mean",
+                                  "mcv1_var":"mean",
+                                  "mcv2":"mean",
+                                  "mcv2_var":"mean"})
+    df["births"] = df["births"].rolling(2).mean()
+    df["births_var"] = df["births_var"].rolling(2).mean()
+    df = df.loc[time_index] 
+
+    ## Add a population column
+    _, population = get_age_pyramid(state)
+    df["population"] = len(df)*[population]
+
+    ## Unpack the coarse regression outputs 
+    ## and interpolate to the fine time scale.
+    initial_S0 = cr.loc[2009,"S0"]
+    initial_S0_var = cr.loc[2009,"S0_var"]
+    rr_prior = cr[["rr","rr_var"]].copy().reset_index()
+    rr_prior.columns = ["time","rr_p","rr_p_var"]
+    rr_prior["time"] = pd.to_datetime({"year":rr_prior["time"],
+                                       "month":1,
+                                       "day":15})
+    rr_prior = rr_prior.set_index("time")
+    rr_prior = rr_prior.resample("d").interpolate().reindex(df.index)
+    rr_prior = rr_prior.fillna(method="bfill").fillna(method="ffill")
+    
+    ## Add the reporting rate prior information to the 
+    ## overall dataframe.
+    df = pd.concat([df,rr_prior],axis=1)
+
+    ## And the initial condition information
+    df["initial_S0"] = len(df)*[initial_S0]
+    df["initial_S0_var"] = len(df)*[initial_S0_var]
+
+    ## Set up some survival corrections.
+    survival = 1.-np.cumsum(0*dists,axis=1)
+    pr_sus_at_mcv1 = survival[0]
+    pr_sus_at_mcv1.index = pd.to_datetime({"year":pr_sus_at_mcv1.index,
+                                           "month":6,"day":15})
+    pr_sus_at_mcv1 = pr_sus_at_mcv1.resample("d").interpolate().reindex(time_index)
+    pr_sus_at_mcv1 = pr_sus_at_mcv1.fillna(method="ffill")
+    pr_sus_at_mcv2 = survival[1]
+    pr_sus_at_mcv2.index = pd.to_datetime({"year":pr_sus_at_mcv2.index,
+                                           "month":6,"day":15})
+    pr_sus_at_mcv2 = pr_sus_at_mcv2.resample("d").interpolate().reindex(time_index)
+    pr_sus_at_mcv2 = pr_sus_at_mcv2.fillna(method="ffill")
+
+    ## Set up vaccination
+    df["v1"] = (df["births"]*mcv1_effic*pr_sus_at_mcv1*df["mcv1"]).shift(18).fillna(method="bfill")
+    df["v1_var"] = mcv1_effic*pr_sus_at_mcv1*(df["births"]*df["mcv1"]*(1.-df["mcv1"])+\
+                    df["mcv1_var"]*(df["births"]**2)+\
+                    df["births_var"]*(df["mcv1"]**2)).shift(18).fillna(method="bfill")
+
+    ## Compute immunizations from MCV2
+    mcv1_failures = df["v1"]*(1.-mcv1_effic)/mcv1_effic
+    mcv1_failures_var = df["v1_var"]*(1.-mcv1_effic)/mcv1_effic
+    df["v2"] = (mcv2_effic*df["mcv2"]*pr_sus_at_mcv2*mcv1_failures).shift(30-18).fillna(method="bfill")
+    df["v2_var"] = mcv2_effic*pr_sus_at_mcv2*(mcv1_failures*df["mcv2"]*(1.-df["mcv2"])+\
+                    df["mcv2_var"]*(mcv1_failures**2)+\
+                    mcv1_failures_var*(df["mcv2"]**2)).shift(30-18).fillna(method="bfill")
+
+    ## Construct adjusted births
+    df["adj_births"] = df["births"]-df["v1"]-df["v2"]
+    df["adj_births_var"] = df["births_var"]+df["v1_var"]+df["v2_var"]
+
+    ## Collect effects besides SIA and initial susceptibility
+    df = df.loc["2009-01-01":]
+    df["S_t_tilde"] = np.cumsum(df["adj_births"])
+
+    ## And finally compute prior adjusted cases
+    df["adj_cases_p"] = (df["cases"]+1.)/df["rr_p"] - 1.
+
+    return df
+
+def prep_sia_effects(cal,time_index):
+
+    ## Get the SIA calendar to collect SIA effects, looping over campaigns
+    ## and aligning to the time steps 
+    cal = cal.loc[(cal["start_date"] >= time_index[0]) &\
+                  (cal["start_date"] <= time_index[-1])]
+    cal = cal.sort_values("start_date").reset_index(drop=True)
+    cal["time"] = cal["start_date"]+0.5*(cal["end_date"].fillna(cal["start_date"])-cal["start_date"])
+    cal["time"] = cal["time"].dt.round("d")
+    sia_effects = cal[["time","doses"]].copy()
+    sia_effects["time"] = sia_effects["time"].apply(lambda t: np.argmin(np.abs(t-time_index)))
+    sia_effects["time"] = time_index[sia_effects["time"].values]
+    
+    ## Consolidate any overlapping dates, and reshape into one
+    ## timeseries per SIA, with the doses at the approporate dates
+    sia_effects = sia_effects.groupby("time").sum().reset_index()
+    sia_effects = sia_effects.reset_index().rename(columns={"index":"sia_num"})
+    sia_effects = sia_effects.pivot(index="time",columns="sia_num",values="doses")
+    sia_effects = sia_effects.reindex(time_index).fillna(0)
+
+    return sia_effects
+
+def fit_the_neighborhood_model(region,hood_df,hood_sias,initial_mu_guess=0.1):
+
+	## Create a model object.
+    hoodP = NeighborhoodPosterior(
+                hood_df,
+                hood_sias,
+                hood_df["initial_S0"].values[0],
+                hood_df["initial_S0_var"].values[0],
+                beta_corr=3.,
+                tau=24,
+                mu_guess=initial_mu_guess,
+                )
+
+    ## Fit this auxillary model by finding good SIAS given the
+    ## coarse regression approximation to r_t
+    x0 = np.ones((hoodP.num_sias+1,))
+    x0[0] = hoodP.logS0_prior
+    x0[1:] = hoodP.mu
+    sia_op = minimize(hoodP.fixed_rt,
+                      x0=x0,
+                      jac=hoodP.fixed_rt_grad,
+                      method="L-BFGS-B",
+                      bounds=[(None,None)]+(len(x0)-1)*[(0,1)],
+                      options={"ftol":1e-13,
+                               "maxcor":100,
+                               },
+                      )
+    print("\nResult from SIA optimization for the {}"
+          " region... ".format(region.title()))
+    print("Success = {}".format(sia_op.success))
+    hoodP.logS0 = sia_op["x"][0]
+    hoodP.mu = sia_op["x"][1:]
+
+    return hoodP
+
+def fit_the_regularized_model(state,state_df,state_sias,hood_t,initial_mu_guess=0.5):
+
+	## Then use that estimate of the compartments to
+    ## inform seasonality in the state level model.
+    neglp = HoodRegularizedModel(
+    			state_df,
+                state_sias,
+                state_df["initial_S0"].values[0],
+                state_df["initial_S0_var"].values[0],
+                hood_t,
+                beta_corr=3.,
+                tau=24,
+                mu_guess=initial_mu_guess)
+
+    ## Fit the model by first finding good SIAS given the
+    ## coarse regression approximation to r_t
+    x0 = np.ones((neglp.num_sias+1,))
+    x0[0] = neglp.logS0_prior
+    x0[1:] = neglp.mu
+    sia_op = minimize(neglp.fixed_rt,
+                      x0=x0,
+                      jac=neglp.fixed_rt_grad,
+                      method="L-BFGS-B",
+                      bounds=[(None,None)]+(len(x0)-1)*[(0,1)],
+                      options={"ftol":1e-13,
+                               "maxcor":100,
+                               },
+                      )
+    print("\nResult from fixed r_t SIA optimization for just {}:".format(state))
+    print("Success = {}".format(sia_op.success))
+    neglp.logS0 = sia_op["x"][0]
+    neglp.mu = sia_op["x"][1:]
+
+    ## Then adjust the reporting rate given the SIAs
+    x0 = np.ones((1+neglp.T+1,))
+    x0[0] = neglp.logS0
+    x0[1:] = neglp.r_hat
+    rep_op = minimize(neglp.fixed_mu,
+                      x0=x0,
+                      jac=neglp.fixed_mu_grad,
+                      method="L-BFGS-B",
+                      bounds=[(None,None)]+(len(x0)-1)*[(5.e-4,1)],
+                      options={"ftol":1e-13,
+                               "maxcor":100,
+                               },
+                      )
+    print("\n...And from fixed SIA r_t optimization")
+    print("Success = {}".format(rep_op.success))
+    neglp.logS0 = rep_op["x"][0]
+    neglp.r_hat = rep_op["x"][1:]
+
+    ## Compute the covariance matrix conditional on the
+    ## reporting adjusted estimates
+    x0 = np.ones((neglp.num_sias+1,))
+    x0[0] = neglp.logS0
+    x0[1:] = neglp.mu
+    hessian = neglp.fixed_rt_hessian(x0)
+    cov = np.linalg.inv(hessian)
+    
+    ## Finalize the uncertainty estimates
+    overall_var = np.diag(cov)
+    neglp.logS0_var = overall_var[0]
+    neglp.mu_var = overall_var[1:]  
+
+    ## Finally, fully specify the transmission parameters using the
+    ## SIA and reporting rate estimates via the optimization above
+    adj_cases = ((state_df["cases"].values+1.)/neglp.r_hat)-1.
+    adj_births = state_df["adj_births"].values
+    adj_sias = (neglp.mu*neglp.sias[:-1]).sum(axis=1)
+    E_t = adj_cases[1:]
+    I_t = adj_cases[:-1]
+    S_t = np.exp(neglp.logS0)+np.cumsum(state_df["adj_births"].values[:-1]-E_t-adj_sias)
+
+    ## Which let's us estimate via a single log-linear regression 
+    ## the alpha != 1 model parameters...
+    print("\nSpecifying the final transmission term...")
+    Y_t = np.log(E_t)-np.log(S_t)
+    X = np.hstack([neglp.X[:neglp.T,1:],np.log(I_t)[:,np.newaxis]])
+    pRW2 = np.zeros((X.shape[1],X.shape[1]))
+    pRW2[:-1,:-1] = neglp.pRW2
+    C = np.linalg.inv(np.dot(X.T,X)+pRW2)
+    beta_hat = np.dot(C,np.dot(X.T,Y_t))
+    beta_t = np.dot(X,beta_hat)
+    RSS = np.sum((Y_t-beta_t)**2)
+    sig_eps = np.sqrt(RSS/(neglp.T))#-X.shape[1]))
+    print("sig_eps = {}".format(sig_eps))
+    beta_cov = sig_eps*sig_eps*C
+    beta_var = np.diag(beta_cov)
+    beta_std = np.sqrt(beta_var)
+    beta_t_std = np.sqrt(np.diag(np.dot(X,np.dot(beta_cov,X.T))))
+    inf_seasonality = np.exp(beta_hat[:-1])
+    inf_seasonality_std = np.exp(beta_hat[:-1])*beta_std[:-1]
+    alpha = beta_hat[-1]
+    alpha_std = beta_std[-1]
+    print("alpha = {} +/- {}".format(alpha,2.*alpha_std))
+
+    return neglp, inf_seasonality, inf_seasonality_std, alpha, sig_eps
