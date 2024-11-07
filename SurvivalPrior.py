@@ -416,6 +416,20 @@ if __name__ == "__main__":
               + df.loc[df.index[0],"births_var"]*((b_season.loc[4:12].sum()\
               *imm_profile.loc[df.index[0],"mcv1"])**2)
 
+    ## And then for infection
+    mask = np.zeros(prA_and_I.shape)
+    mask[np.where(
+        (prA_and_I.index.values[:,None] + prA_and_I.columns.values[None,:])\
+        >= df.index[0]
+        )] = 1.
+    inf_after_t0 = (mask*prA_and_I).sum(axis=1)
+    S0 += (df["births"].reindex(pr_inf.index).fillna(method="bfill")\
+            *inf_after_t0).loc[:df.index[0]-1].sum()
+    S0_var += (df["births"].reindex(pr_inf.index).fillna(method="bfill")\
+            *inf_after_t0*(1.-inf_after_t0)\
+            + df["births_var"].reindex(pr_inf.index).fillna(method="bfill")\
+            *(inf_after_t0**2)).loc[:df.index[0]-1].sum()
+
     ## Compute estimates of infectious populations. Start by making
     ## a propogator from birth cohort to expected infection
     T = prA_and_I.index[-1]+prA_and_I.columns[-1]-prA_and_I.index[0]+1
