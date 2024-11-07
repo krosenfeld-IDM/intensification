@@ -579,7 +579,7 @@ def prep_model_inputs(state,time_index,epi,cr,dists,mcv1_effic=0.825,mcv2_effic=
 
     return df
 
-def prep_sia_effects(cal,time_index):
+def prep_sia_effects(cal,time_index,md=False):
 
     ## Get the SIA calendar to collect SIA effects, looping over campaigns
     ## and aligning to the time steps 
@@ -588,6 +588,11 @@ def prep_sia_effects(cal,time_index):
     cal = cal.sort_values("start_date").reset_index(drop=True)
     cal["time"] = cal["start_date"]+0.5*(cal["end_date"].fillna(cal["start_date"])-cal["start_date"])
     cal["time"] = cal["time"].dt.round("d")
+
+    ## Capture the metadata
+    sia_metadata = cal.reset_index().rename(columns={"index":"sia_num"})
+    
+    ## And make a time series version
     sia_effects = cal[["time","doses"]].copy()
     sia_effects["time"] = sia_effects["time"].apply(lambda t: np.argmin(np.abs(t-time_index)))
     sia_effects["time"] = time_index[sia_effects["time"].values]
@@ -599,7 +604,10 @@ def prep_sia_effects(cal,time_index):
     sia_effects = sia_effects.pivot(index="time",columns="sia_num",values="doses")
     sia_effects = sia_effects.reindex(time_index).fillna(0)
 
-    return sia_effects
+    if md:
+    	return sia_effects, sia_metadata
+    else:
+    	return sia_effects
 
 def fit_the_neighborhood_model(region,hood_df,hood_sias,initial_mu_guess=0.1):
 
