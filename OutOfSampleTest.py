@@ -185,8 +185,13 @@ if __name__ == "__main__":
         adj_sias.loc[adj_sias[c] != 0,c] = avg_impact
     full_adj_sias = adj_sias.values[:-1].sum(axis=1)
 
-    ## Also specify the full time source term.
-    full_adj_births = state_df["adj_births"].values
+    ## Also specify the full time source term, by periodically forward filling
+    ## based on the adj. births you have.
+    full_adj_births = state_tr["adj_births"].reindex(state_df.index)
+    ab_profile = state_tr.loc[state_tr.index[-24:],"adj_births"].values
+    full_adj_births = full_adj_births.fillna(
+            pd.Series(ab_profile[np.arange(len(state_df)-len(state_tr))%24],
+                      index=state_df.index[len(state_tr):])).values
 
     ## Set up the full reporting rate as well
     full_rr = pd.Series(neglp.r_hat,
