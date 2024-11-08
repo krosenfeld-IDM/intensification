@@ -41,7 +41,7 @@ if __name__ == "__main__":
         for i, state in states.iteritems():
 
             print("Model construction for {} ({}/{})...".format(state.upper(),i+1,len(states)))
-            subprocess.run("python VisualizeInputs.py {} -s".format(state))
+            subprocess.run("python VisualizeInputs.py {} -s".format(state),shell=True)
             model_out =subprocess.run("python TransmissionModel.py {} -s".format(state),
                         capture_output=True,text=True,shell=True)
             test_out = subprocess.run("python OutOfSampleTest.py {} -s".format(state),
