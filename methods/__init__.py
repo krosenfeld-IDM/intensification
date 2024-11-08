@@ -4,7 +4,7 @@
 ## see http://matplotlib.org/users/customizing.html for details.
 import matplotlib.pyplot as plt
 plt.rcParams["font.size"] = 22.
-plt.rcParams["font.family"] = "serif"
+plt.rcParams["font.family"] = ["serif","sans-serif"]
 plt.rcParams["font.sans-serif"] = "DejaVu Sans"
 plt.rcParams["font.serif"] = ["Garamond","Times New Roman"]
 plt.rcParams["xtick.labelsize"] = "medium"
