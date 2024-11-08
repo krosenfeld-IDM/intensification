@@ -17,3 +17,5 @@ Then, scripts are set up to create the paper's figures (for Lagos State) by defa
 6. `SurvivalPrior.py` will make Appendix 2, Figure 1.
 
 Running these with a different state's name as a command line argument will produce the associated version of the figure for that state. For example, you can try `python TransmissionModel.py oyo`. 
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/NThakkar-IDM/intensification)
