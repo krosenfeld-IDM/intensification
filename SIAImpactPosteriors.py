@@ -147,8 +147,8 @@ if __name__ == "__main__":
 
     ## Then use that estimate of the compartments to
     ## inform seasonality in the state level model.
-    initial_guess = {"abia":0.6,"ebonyi":0.6,
-                     "enugu":0.6,"imo":0.6,"akwa ibom":0.4,
+    initial_guess = {"abia":0.6,"anambra":0.9,
+                     "enugu":0.6,"imo":0.6,
                      "bayelsa":0.4,"cross river":0.2,"delta":0.4,
                      "rivers":0.4,"edo":0.2,"ekiti":0.2,"ogun":0.9,
                      }

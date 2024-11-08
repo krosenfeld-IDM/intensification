@@ -156,7 +156,7 @@ if __name__ == "__main__":
     initial_guess = {
                      "enugu":0.6,"imo":0.7,"akwa ibom":0.9,
                      "oyo":0.9,"lagos":0.9,"ogun":1.,"kano":0.9,
-                     "ekiti":0.25,
+                     "ekiti":0.25,"anambra":0.9,
                      }
     neglp, inf_seasonality, inf_seasonality_std, alpha, sig_eps = \
         nSIR.fit_the_regularized_model(
