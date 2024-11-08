@@ -33,6 +33,7 @@ if __name__ == "__main__":
     ## Loop over states, fit models, compile results,
     ## and create a book of plots.
     sia_dists = {}
+    hidden_states = {}
     with PdfPages(os.path.join("_plots","state_models_summary.pdf")) as book:
         
         ## Loop over states
@@ -90,8 +91,13 @@ if __name__ == "__main__":
             ## file associated with this state.
             file = os.path.join("pickle_jar",
                 "{}_sias.pkl".format(state.replace(" ","_")))
-            this_state_dists = pd.read_pickle(file)
-            sia_dists[state] = this_state_dists
+            sia_dists[state] = pd.read_pickle(file)
+            os.remove(file)
+
+            ## And do the same for the S_t and I_t estimates
+            file = os.path.join("pickle_jar",
+                "{}_traj.pkl".format(state.replace(" ","_")))
+            hidden_states[state] = pd.read_pickle(file)
             os.remove(file)
 
         ## Set some PDF metadata
@@ -100,10 +106,19 @@ if __name__ == "__main__":
         d["CreationDate"] = pd.to_datetime("today")
     
     ## Put it all together and save
-    output = pd.concat(sia_dists.values(),axis=0)\
+    sia_dists = pd.concat(sia_dists.values(),axis=0)\
              .reset_index(drop=True)
-    print("\nSaving the output:")
-    print(output)
-    output.to_pickle(
+    print("\nSaving the SIA posteriors:")
+    print(sia_dists)
+    sia_dists.to_pickle(
         os.path.join("pickle_jar","sia_dists_by_state.pkl")
+        )
+
+    ## And for S_t and I_t
+    hidden_states = pd.concat(hidden_states.values(),
+                    keys=hidden_states.keys())
+    print("\nSaving the susceptibility and prevalence estimates:")
+    print(hidden_states)
+    hidden_states.to_pickle(
+        os.path.join("pickle_jar","hidden_states_by_state.pkl")
         )

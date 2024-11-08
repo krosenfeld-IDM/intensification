@@ -239,6 +239,18 @@ if __name__ == "__main__":
     print("\nGoodness of fit to cases (long term):")
     fit_quality(state_df["cases"].values,cases_long)
 
+    ## Save the estimates of S_t and I_t if we're 
+    ## serializing output.
+    if _serialize:
+        st_df = pd.DataFrame(np.array([traj_short[:,0,:].mean(axis=0),
+                                       traj_short[:,0,:].var(axis=0),
+                                       traj_short[:,1,:].mean(axis=0),
+                                       traj_short[:,1,:].var(axis=0)]).T,
+                             columns=["Savg","Svar","Iavg","Ivar"],
+                             index=state_df.index)
+        st_df.to_pickle(os.path.join("pickle_jar",
+                        "{}_traj.pkl".format(state.replace(" ","_"))))
+
     ## Make it all per pop
     traj_long = 100*traj_long/(state_df["population"].values[None,None,:])
     traj_short = 100*traj_short/(state_df["population"].values[None,None,:])
