@@ -42,9 +42,12 @@ if __name__ == "__main__":
 
             print("Model construction for {} ({}/{})...".format(state.upper(),i+1,len(states)))
             subprocess.run("python VisualizeInputs.py {} -s".format(state))
-            model_out =subprocess.run("python TransmissionModel.py {} -s".format(state),capture_output=True,text=True)
-            test_out = subprocess.run("python OutOfSampleTest.py {} -s".format(state),capture_output=True,text=True)
-            post_out = subprocess.run("python SIAImpactPosteriors.py {} -s".format(state),capture_output=True,text=True)
+            model_out =subprocess.run("python TransmissionModel.py {} -s".format(state),
+                        capture_output=True,text=True,shell=True)
+            test_out = subprocess.run("python OutOfSampleTest.py {} -s".format(state),
+                        capture_output=True,text=True,shell=True)
+            post_out = subprocess.run("python SIAImpactPosteriors.py {} -s".format(state),
+                        capture_output=True,text=True,shell=True)
 
             ## Check for convergence across the three model scripts (fit to different time
             ## windows in some cases)

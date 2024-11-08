@@ -42,7 +42,7 @@ if __name__ == "__main__":
 
             print("Prior construction for {} ({}/{})...".format(state.upper(),i+1,len(states)))
             subprocess.run("python SurvivalPrior.py {} -s".format(state),
-                    capture_output=~_verbose)
+                    capture_output=~_verbose,shell=True)
 
             ## Get and store the output dataframe
             prior_dfs[state] = pd.read_pickle(os.path.join("pickle_jar","survival_prior.pkl"))
