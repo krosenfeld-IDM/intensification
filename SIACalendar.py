@@ -503,6 +503,11 @@ if __name__ == "__main__":
                             sia_calendar["age_group"])].values,
                      index=sia_calendar.index)
     sia_calendar["doses"] = sia_calendar["doses"].fillna(avgs).astype(int)
+
+    ## Remove campaigns that are too recent, with too little information
+    sia_calendar = sia_calendar.loc[
+                    sia_calendar["start_date"] <= "2023-10-01"]\
+                    .reset_index(drop=True)
     
     ## So we have
     print("\nThe SIA calendar (with imputed doses)...")
