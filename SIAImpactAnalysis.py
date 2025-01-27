@@ -98,8 +98,8 @@ if __name__ == "__main__":
     scat.set_xscale("log")
     scat.set_xticks([2e5,4e5,6e5,1e6,2e6,3e6])
     scat.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-    scat.set_xticklabels([r"$0.2$",r"$0.4$",r"$0.6$",r"$10^6$",r"$2$",r"$3$"])
-    scat.set(xlabel="Doses delivered",
+    scat.set_xticklabels([r"$0.2$",r"$0.4$",r"$0.6$",r"$1$",r"$2$",r"$3$"])
+    scat.set(xlabel=r"Doses delivered $(\times 10^6)$",
              ylabel="Per dose efficacy",
              )
     
