@@ -2,7 +2,7 @@
 Using state-level measles transmission models to compare Southern Nigeria's 2019 intensification of routine immunization to its mass vaccination campaigns since 2010.
 
 This is a repository of Python 3.8 code associated with the manuscript [*Routine immunization
-intensification, vaccination campaigns, and measles transmission in Southern Nigeria*](https://nthakkar.github.io/), 2025. In that paper, we fit mechanistic transmission models to surveillance and survey data to estimate catch-up vaccination events' effects on measles immunity. We find that the age-targeted 2019 effort was more than twice as effective per dose as the mass campaigns.
+intensification, vaccination campaigns, and measles transmission in Southern Nigeria*](https://www.medrxiv.org/content/10.1101/2025.02.24.25322796v1), 2025. In that paper, we fit mechanistic transmission models to surveillance and survey data to estimate catch-up vaccination events' effects on measles immunity. We find that the age-targeted 2019 effort was more than twice as effective per dose as the mass campaigns.
 
 This repository focuses on the transmission model, and raw data (the surveys, line list surveillance data, etc.) are not included. Instead, the `_data/` directory includes the processed model inputs, like those visualized in the manuscript's first figure but for every southern state.
 
