@@ -6,6 +6,32 @@ intensification, vaccination campaigns, and measles transmission in Southern Nig
 
 This repository focuses on the transmission model, and raw data (the surveys, line list surveillance data, etc.) are not included. Instead, the `_data/` directory includes the processed model inputs, like those visualized in the manuscript's first figure but for every southern state.
 
+## Pipeline Module
+
+A unified `pipeline.py` script orchestrates the full intensification workflow, including prior generation, state summary, and figure creation.
+
+Usage:
+```bash
+python pipeline.py <step> [--state STATE] [--data-dir DATA_DIR] [-v]
+```
+
+Available steps:
+- `priors`  : Run `GeneratePriors.py` and related scripts.
+- `summary` : Run `GenerateStateSummary.py`.
+- `figures` : Generate all figures for a given state (default `--state lagos`).
+- `all`     : Run priors, summary, and figures in sequence.
+
+Examples:
+```bash
+# Run the full pipeline for Oyo state, with verbose output
+python pipeline.py all --state oyo -v
+```
+
+Run tests with:
+```bash
+python -m pytest -q
+```
+
 For the repository to function correctly, the scripts `GeneratePriors.py` and `GenerateStateSummary.py` have to be run first, in that order, and it's worth noting this will take about 20 minutes to run on a laptop. These scripts call the others as subprocesses, and they generate some serialized output used throughout the repo.
 
 Then, scripts are set up to create the paper's figures (for Lagos State) by default. 
