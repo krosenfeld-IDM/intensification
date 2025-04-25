@@ -1,5 +1,5 @@
 [project]
-name = intensification"
+name = "intensification"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -10,4 +10,5 @@ dependencies = [
     "pandas==1.2.4",
     "scikit-learn==0.23.1",
     "scipy==1.5.0",
+    "pytest==6.2.5",
 ]
