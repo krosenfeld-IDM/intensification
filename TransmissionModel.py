@@ -52,7 +52,8 @@ def fit_quality(data,samples,verbose=True):
 
 if __name__ == "__main__":
 
-    ## Get the state name
+    ## Get the state name from command line input
+    ## otherwise stick with a default.
     state = " ".join(sys.argv[1:])
     if state == "":
         state = "lagos"
@@ -78,7 +79,8 @@ if __name__ == "__main__":
                        "state"]
 
     ## Get the epi data from CSV, with some
-    ## data type parsing and reshaping.
+    ## data type parsing and reshaping into a multiindex
+    ## dataframe with state and time as levels.
     epi = pd.read_csv(os.path.join("_data",
                       "southern_states_epi_timeseries.csv"),
                       index_col=0,
@@ -96,7 +98,9 @@ if __name__ == "__main__":
                     parse_dates=["start_date","end_date"]) 
     cal = cal.loc[cal["state"].isin(hood)]
 
-    ## And get the age at infection inferences
+    ## And get the age at infection inferences, which are 
+    ## based on observed ages of cases - see the discussion in the
+    ## manuscript's appendix 2.
     age_dists = pd.read_csv(os.path.join("_data",
                             "southern_age_at_infection.csv"),
                         index_col=0)\
@@ -122,7 +126,8 @@ if __name__ == "__main__":
         dfs[this_state] = this_state_df
     dfs = pd.concat(dfs.values(),keys=dfs.keys())
 
-    ## Create a state df and a hood df
+    ## Create a state df and a neighborhood df by subsetting
+    ## and aggregating as appropriate.
     columns = ["cases","rejected","population",
                "adj_births","adj_births_var",
                "initial_S0","initial_S0_var","S_t_tilde",
@@ -131,7 +136,7 @@ if __name__ == "__main__":
     hood_df = dfs.loc[hood,#[s for s in hood if s != state],
                       columns].groupby(level=1).sum()
 
-    ## Make a comparison plot
+    ## Make a comparison plot of the data from each.
     fig, axes = plt.subplots(figsize=(12,5))
     axes_setup(axes)
     x = hood_df["cases"].resample("MS").sum()
@@ -156,17 +161,22 @@ if __name__ == "__main__":
     axes.legend(frameon=False,fontsize=22)
     fig.tight_layout()
 
-    ## And associated SIA effects
+    ## Reshape the state and neighborhood campaign effects from a table
+    ## of metadata to a set of timeseries with non-zero entries at the
+    ## time of the campaign.
     state_sias = nSIR.prep_sia_effects(cal.loc[cal["state"] == state].copy(),
                                   state_df.index)
     hood_sias = nSIR.prep_sia_effects(cal.copy(),hood_df.index)
 
     ## Start by solving the neighborhood problem, to create regularizing
-    ## inputs for the state level model.
+    ## inputs for the state level model. See the discussion around 
+    ## Appendix 2's equations 3 and 4 for details.
     hoodP = nSIR.fit_the_neighborhood_model(region,hood_df,hood_sias)
 
-    ## Then use that estimate of the compartments to
-    ## inform seasonality in the state level model.
+    ## Then use that estimate of the compartment populations to
+    ## inform seasonality in the state level model. Note that we need
+    ## some care in the initial-guess on campaign effects to prevent the
+    ## BFGS line search from selecting infeasible values and crashing.
     initial_guess = {"abia":0.6,"anambra":0.9,
                      "enugu":0.5,"imo":0.6,
                      "bayelsa":0.4,"cross river":0.2,"delta":0.4,
@@ -190,7 +200,10 @@ if __name__ == "__main__":
     print("Total immunized in SIAs "+\
           "= {0:.0f} (of {1:.0f}, aka {2:.2f} percent overall)".format(inf_sia_tot,reached_tot,implied_effic))
 
-    ## Sample the fitted model
+    ## Sample the fitted model by presampling the transmission volatility
+    ## effect (eps_t), the initial conditions, and the source term, then
+    ## looping over time. traj_long samples without reference to the data,
+    ## traj_short samples in one step ahead increments.
     num_samples = 10000
     eps_t = np.exp(sig_eps*np.random.normal(size=(num_samples,len(state_df))))
     S0_samples = np.random.normal(np.exp(neglp.logS0),
@@ -227,13 +240,15 @@ if __name__ == "__main__":
         traj_long[:,:,t] = np.clip(traj_long[:,:,t],0.,None)
         traj_short[:,:,t] = np.clip(traj_short[:,:,t],0.,None)
 
-    ## Sample to get estimates of observed cases
+    ## Sample to get estimates of observed cases from the
+    ## incidence trajectories.
     cases_short = np.random.binomial(np.round(traj_short[:,1,:]).astype(int),
                                      p=neglp.r_hat)
     cases_long = np.random.binomial(np.round(traj_long[:,1,:]).astype(int),
                                      p=neglp.r_hat)
 
-    ## Test the goodness of fit
+    ## Test the goodness of fit relative to observed
+    ## cases, in terms of R^2 score.
     print("\nGoodness of fit to cases (short term):")
     fit_quality(state_df["cases"].values,cases_short)
     print("\nGoodness of fit to cases (long term):")
@@ -251,11 +266,12 @@ if __name__ == "__main__":
         st_df.to_pickle(os.path.join("pickle_jar",
                         "{}_traj.pkl".format(state.replace(" ","_"))))
 
-    ## Make it all per pop
+    ## Make it all per population for plotting
+    ## purposes.
     traj_long = 100*traj_long/(state_df["population"].values[None,None,:])
     traj_short = 100*traj_short/(state_df["population"].values[None,None,:])
 
-    ## Summarize the result
+    ## Summarize the result in terms of percentiles.
     long_low, _, long_mid, _, long_high = low_mid_high(traj_long)
     short_low, _, short_mid, _, short_high = low_mid_high(traj_short)
     short_c_low, _, short_c_mid, _, short_c_high = low_mid_high(cases_short)

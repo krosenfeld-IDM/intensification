@@ -33,6 +33,7 @@ if __name__ == "__main__":
 
     ## Get the data from pickle_jar
     ## created via the posterior generator script
+    ## GenerateStateSummary.py. 
     dists = pd.read_pickle(
         os.path.join("pickle_jar","sia_dists_by_state.pkl"),
         )
@@ -64,7 +65,8 @@ if __name__ == "__main__":
     dists["std"] = dists["dist"].apply(lambda a: np.sum(a*mu*mu))
     dists["std"] = np.sqrt(dists["std"] - dists["avg"]**2)
     
-    ## Overall summary plot
+    ## Set up an overall summary plot to make the manuscript's
+    ## Figure 5.
     fig = plt.figure(figsize=(11.5,8))
     gs = fig.add_gridspec(3,3)
     scat = fig.add_subplot(gs[:-1,:-1])
@@ -72,11 +74,12 @@ if __name__ == "__main__":
     ax2 = fig.add_subplot(gs[1,-1])
     s_ax = fig.add_subplot(gs[-1,:])
 
-    ## Start with the scatter
+    ## Start with the scatter of state-intervention pairs, with
+    ## colors by age target.
     axes_setup(scat)
     scat.grid(color="grey",alpha=0.2)
 
-    ## Wide first
+    ## Wide age first
     df = dists.loc[dists["age_group"] == "9-59M"]
     scat.errorbar(df["doses"],
                   df["avg"],yerr=2.*df["std"],
@@ -85,16 +88,16 @@ if __name__ == "__main__":
                   ls="None",
                   label="9 to 59M campaigns")
 
-    ## Then narrow
+    ## Then narrow age
     df = dists.loc[dists["age_group"] == "9-23M"]
     scat.errorbar(df["doses"],
                   df["avg"],yerr=2.*df["std"],
                   color=colors["9-23M"],alpha=0.9,
                   marker="o",lw=1,markersize=9,
                   ls="None",
-                  label="12 to 23M campaigns")
+                  label="9 to 23M campaigns")
 
-    ## Finish up
+    ## Finish up with custom ticks.
     scat.set_xscale("log")
     scat.set_xticks([2e5,4e5,6e5,1e6,2e6,3e6])
     scat.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
@@ -104,7 +107,7 @@ if __name__ == "__main__":
              )
     
     ## Add the first dist
-    ## First compute the mixture
+    ## First compute the mixture distribution
     df = dists.loc[dists["age_group"] == "9-59M"]
     w = df["doses"]/(df["doses"].sum())
     dist = (df["dist"]*w.values).sum()
@@ -160,12 +163,12 @@ if __name__ == "__main__":
     ax2.set_xticks([0,0.1,0.2,0.3,0.4])
     ax2.set_ylim((0,None))
     ax2.set_xlabel("Per dose efficacy")
-    ax2.text(0.97,0.97,"9 to 23M\ncampaigns",
+    ax2.text(0.97,0.97,"9 to 23M\nIRIs",
              ha="right",va="top",
              color=colors["9-23M"],fontsize=22,
              transform=ax2.transAxes)
 
-    ## Add susceptibility
+    ## Add overall susceptibility
     st = st.groupby(level=1).sum()
     st["Serr"] = np.sqrt(st["Svar"])
     st["Ierr"] = np.sqrt(st["Ivar"])
@@ -179,7 +182,7 @@ if __name__ == "__main__":
     s_ax.plot(st["Savg"],
               color="k",lw=3)
 
-    ## Add campaign timeline
+    ## Add campaign timeline as little bars.
     ylim = s_ax.get_ylim()
     sias = set(zip(dists["age_group"],
                    dists["time"]))
@@ -195,7 +198,7 @@ if __name__ == "__main__":
     fig.tight_layout()
     fig.savefig(os.path.join("_plots","sia_analysis.png"))
 
-    ## Print some stats
+    ## Print some stats of performance averaged over states.
     print("\nThe avg across campaigns is {}".format(avg))
     print("The avg for the IRI is {}".format(avg2019))
     print("So the 2019 doses were {} times as effective".format(avg2019/avg))

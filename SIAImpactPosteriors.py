@@ -57,7 +57,8 @@ def fit_quality(data,samples,verbose=True):
 
 if __name__ == "__main__":
 
-    ## Get the state name
+    ## Get the state name from command line input
+    ## otherwise stick with a default.
     state = " ".join(sys.argv[1:])
     if state == "":
         state = "lagos"
@@ -101,7 +102,9 @@ if __name__ == "__main__":
                     parse_dates=["start_date","end_date"]) 
     cal = cal.loc[cal["state"].isin(hood)]
 
-    ## And get the age at infection inferences
+    ## And get the age at infection inferences, which are 
+    ## based on observed ages of cases - see the discussion in the
+    ## manuscript's appendix 2.
     age_dists = pd.read_csv(os.path.join("_data",
                             "southern_age_at_infection.csv"),
                         index_col=0)\
@@ -127,7 +130,8 @@ if __name__ == "__main__":
         dfs[this_state] = this_state_df
     dfs = pd.concat(dfs.values(),keys=dfs.keys())
 
-    ## Create a state df and a hood df
+    ## Create a state df and a neighborhood df by subsetting
+    ## and aggregating as appropriate.
     columns = ["cases","rejected","population",
                "adj_births","adj_births_var",
                "initial_S0","initial_S0_var","S_t_tilde",
@@ -136,17 +140,22 @@ if __name__ == "__main__":
     hood_df = dfs.loc[hood,#[s for s in hood if s != state],
                       columns].groupby(level=1).sum()
 
-    ## And associated SIA effects
+    ## Reshape the state and neighborhood campaign effects from a table
+    ## of metadata to a set of timeseries with non-zero entries at the
+    ## time of the campaign.
     state_sias, sia_metadata = nSIR.prep_sia_effects(cal.loc[cal["state"] == state].copy(),
                                 		state_df.index,md=True)
     hood_sias = nSIR.prep_sia_effects(cal.copy(),hood_df.index)
 
     ## Start by solving the neighborhood problem, to create regularizing
-    ## inputs for the state level model.
+    ## inputs for the state level model. See the discussion around 
+    ## Appendix 2's equations 3 and 4 for details.
     hoodP = nSIR.fit_the_neighborhood_model(region,hood_df,hood_sias)
 
-    ## Then use that estimate of the compartments to
-    ## inform seasonality in the state level model.
+    ## Then use that estimate of the compartment populations to
+    ## inform seasonality in the state level model. Note that we need
+    ## some care in the initial-guess on campaign effects to prevent the
+    ## BFGS line search from selecting infeasible values and crashing.
     initial_guess = {"abia":0.6,"anambra":0.9,
                      "enugu":0.5,"imo":0.6,
                      "bayelsa":0.4,"cross river":0.2,"delta":0.4,
@@ -158,14 +167,18 @@ if __name__ == "__main__":
                     hoodP.compartment_df(),
                     initial_guess.get(state,0.8)*hoodP.mu.mean())
 
-	## Construct the full parameter vector
+	## Construct the full parameter vector and evaluate
+    ## the negative log posterior at that value.
     x0 = np.zeros((1+neglp.num_sias+neglp.T+1,))
     x0[0] = neglp.logS0
     x0[1:neglp.num_sias+1] = neglp.mu
     x0[neglp.num_sias+1:] = neglp.r_hat
     map_NLP = neglp(x0)
 
-    ## Compute some stuff
+    ## Set up the grid of possible campaign efficacy values, 
+    ## representing the fraction of delivered doses that immunized
+    ## a susceptible person in the model, and set aside some storage
+    ## for posterior profiles (X). 
     possible_mu = np.linspace(0.,1.,800)
     X = np.vstack(len(possible_mu)*[x0])
 
@@ -179,7 +192,8 @@ if __name__ == "__main__":
         ax.spines["right"].set_visible(False)
         ax.grid(color="grey",alpha=0.2)
 
-	## Loop over SIAs
+	## Loop over SIAs, plotting the posterior profile
+    ## for each.
     xlim = (-0.025,0.3333)
     xlabel = "Per dose efficacy"
     dists = np.zeros((len(sia_metadata),len(possible_mu)))
@@ -189,7 +203,8 @@ if __name__ == "__main__":
         this_X = X.copy()
         this_X[:,1+i] = possible_mu
 
-        ## Compute the distribution
+        ## Compute the distribution, ignoring underflow errors
+        ## at very unlikely outcomes.
         with np.errstate(invalid="ignore"):
             this_dist = np.array([np.exp(-neglp(x)+map_NLP) for x in this_X])
         this_dist = np.nan_to_num(this_dist,0)
@@ -198,7 +213,8 @@ if __name__ == "__main__":
         ## Store it
         dists[i] = this_dist
 
-        ## Then compute the SIA metadata
+        ## Then gather the SIA metadata, including an 
+        ## annotation for plotting.
         d = sia_metadata.loc[i,"time"]
         adj_reach = sia_metadata.loc[i,"doses"]
         if adj_reach < 1e6:
@@ -215,7 +231,7 @@ if __name__ == "__main__":
         axes[i].plot(possible_mu,this_dist,
                      lw=4,color=colors[age_range])
         
-        ## Add a label
+        ## Add the annotation.
         axes[i].text(0.99,0.01,"{}\n{}{} doses\n{}".format(
                         d.strftime("%b, %Y").replace("Jun","June"),reach,unit,age_range.replace("-"," to ")
                         ),

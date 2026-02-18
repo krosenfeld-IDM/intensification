@@ -22,7 +22,8 @@ def axes_setup(axes):
 
 if __name__ == "__main__":
 
-    ## Get the state name
+    ## Get the state name from command line input
+    ## otherwise stick with a default.
     state = " ".join(sys.argv[1:])
     if state == "":
         state = "lagos"
@@ -38,7 +39,9 @@ if __name__ == "__main__":
     state = state[0].rstrip()
 
     ## Get the epi data from CSV, with some
-    ## data type parsing and reshaping.
+    ## data type parsing and reshaping into a multi-index
+    ## dataframe with state and time at levels 0 and 1 
+    ## respectively.
     epi = pd.read_csv(os.path.join("_data",
                       "southern_states_epi_timeseries.csv"),
                       index_col=0,
@@ -57,7 +60,6 @@ if __name__ == "__main__":
                     .set_index("state")
     hist.columns = [int(float(c)) for c in hist.columns]
 
-
     ## And then get the survey summary statistics
     full_survey = pd.read_csv(os.path.join("_data",
                               "survey_mcv1_summary_stats.csv"),
@@ -71,7 +73,8 @@ if __name__ == "__main__":
     survey = full_survey.loc[full_survey["state"] == state]
     hist = hist.loc[state]
 
-    ## Set up a plot
+    ## Set up a plot with multiple, distinctly
+    ## sized panels.
     fig = plt.figure(figsize=(12,10))
     gs = fig.add_gridspec(3,3)
     case_ax = fig.add_subplot(gs[0,:-1])
@@ -117,7 +120,7 @@ if __name__ == "__main__":
     axes[2].set_ylim((0,1.1))
     axes[2].set_ylabel("Coverage")
 
-    ## Survey type indicators
+    ## Survey type annotations.
     for i, row in survey.iterrows():
         if row.loc["mcv_est"] < mcv1.loc[row.loc["year"],"mcv1"]:
             v_align = "top"
@@ -170,7 +173,7 @@ if __name__ == "__main__":
     axes[3].set_ylabel("% of cases")
 
 
-    ## Finish up
+    ## Finish up, with an optional title.
     #fig.suptitle("Measles data in {}".format(state.title()))
     fig.tight_layout(h_pad=0.,w_pad=0)#rect=[0.0, 0.0, 1, 0.95])
 
@@ -188,7 +191,9 @@ if __name__ == "__main__":
                  fontsize=28,color=colors[2],
                  transform=axes[2].transAxes)
 
-    ## Save at all
+    ## Save it, as a png but also if this script is being run
+    ## as a subprocess in a generator script, the object itself
+    ## is pickled for use elsewhere.
     fig.savefig(os.path.join("_plots","model_inputs.png"))
     if _serialize:
         pickle.dump(fig, 

@@ -55,7 +55,8 @@ def fit_quality(data,samples,verbose=True):
 
 if __name__ == "__main__":
 
-    ## Get the state name
+    ## Get the state name from command line input
+    ## otherwise stick with a default.
     state = " ".join(sys.argv[1:])
     if state == "":
         state = "lagos"
@@ -81,7 +82,8 @@ if __name__ == "__main__":
                        "state"]
 
     ## Get the epi data from CSV, with some
-    ## data type parsing and reshaping.
+    ## data type parsing and reshaping into a multiindex
+    ## dataframe with state and time as levels.
     epi = pd.read_csv(os.path.join("_data",
                       "southern_states_epi_timeseries.csv"),
                       index_col=0,
@@ -91,7 +93,7 @@ if __name__ == "__main__":
     time_index = pd.date_range("2008-01-01","2024-01-31",
                                 freq="SMS")
 
-        ## Get the remaining raw data
+    ## Get the remaining raw data
     ## The SIA calendar
     cal = pd.read_csv(os.path.join("_data",
                       "imputed_sia_calendar_by_state.csv"),
@@ -99,7 +101,9 @@ if __name__ == "__main__":
                     parse_dates=["start_date","end_date"]) 
     cal = cal.loc[cal["state"].isin(hood)]
 
-    ## And get the age at infection inferences
+    ## And get the age at infection inferences, which are 
+    ## based on observed ages of cases - see the discussion in the
+    ## manuscript's appendix 2.
     age_dists = pd.read_csv(os.path.join("_data",
                             "southern_age_at_infection.csv"),
                         index_col=0)\
@@ -125,7 +129,8 @@ if __name__ == "__main__":
         dfs[this_state] = this_state_df
     dfs = pd.concat(dfs.values(),keys=dfs.keys())
 
-    ## Create a state df and a hood df
+    ## Create a state df and a neighborhood df by subsetting
+    ## and aggregating as appropriate.
     columns = ["cases","rejected","population",
                "adj_births","adj_births_var",
                "initial_S0","initial_S0_var","S_t_tilde",
@@ -133,13 +138,16 @@ if __name__ == "__main__":
     state_df = dfs.loc[state,columns+["rr_p","rr_p_var"]]
     hood_df = dfs.loc[hood,#[s for s in hood if s != state],
                       columns].groupby(level=1).sum()
-
-    ## And associated SIA effects
+    
+    ## Reshape the state and neighborhood campaign effects from a table
+    ## of metadata to a set of timeseries with non-zero entries at the
+    ## time of the campaign.
     state_sias = nSIR.prep_sia_effects(cal.loc[cal["state"] == state].copy(),
                                   state_df.index)
     hood_sias = nSIR.prep_sia_effects(cal.copy(),hood_df.index)
 
-    ## Split the data into within and out of sample components
+    ## Split the data into within (_tr for training) and out of 
+    ## sample components
     state_tr = state_df.loc[:out_of_sample_date]
     hood_tr = hood_df.loc[:out_of_sample_date]
     state_sias_tr = state_sias.loc[:out_of_sample_date]
@@ -148,11 +156,14 @@ if __name__ == "__main__":
     hood_sias_tr = hood_sias_tr.loc[:,(hood_sias_tr != 0).any(axis=0)]
 
     ## Start by solving the neighborhood problem, to create regularizing
-    ## inputs for the state level model.
+    ## inputs for the state level model. See the discussion around 
+    ## Appendix 2's equations 3 and 4 for details.
     hoodP = nSIR.fit_the_neighborhood_model(region,hood_tr,hood_sias_tr)
 
     ## Then use that estimate of the compartments to
-    ## inform seasonality in the state level model.
+    ## inform seasonality in the state level model. Note that we need
+    ## some care in the initial-guess on campaign effects to prevent the
+    ## BFGS line search from selecting infeasible values and crashing.
     initial_guess = {
                      "enugu":0.6,"imo":0.7,"akwa ibom":0.9,
                      "oyo":0.9,"lagos":0.9,"ogun":1.,"kano":0.9,
@@ -186,14 +197,16 @@ if __name__ == "__main__":
     full_adj_sias = adj_sias.values[:-1].sum(axis=1)
 
     ## Also specify the full time source term, by periodically forward filling
-    ## based on the adj. births you have.
+    ## based on the adj. births you have, thus preserving the seasonality in births
+    ## as you extrapolate.
     full_adj_births = state_tr["adj_births"].reindex(state_df.index)
     ab_profile = state_tr.loc[state_tr.index[-24:],"adj_births"].values
     full_adj_births = full_adj_births.fillna(
             pd.Series(ab_profile[np.arange(len(state_df)-len(state_tr))%24],
                       index=state_df.index[len(state_tr):])).values
 
-    ## Set up the full reporting rate as well
+    ## Set up the full reporting rate as well, extrapolating
+    ## at the prior level.
     full_rr = pd.Series(neglp.r_hat,
                    index=state_tr.index,name="rr")
     full_rr = full_rr.reindex(state_df.index).fillna(
@@ -248,7 +261,7 @@ if __name__ == "__main__":
     print("\nGoodness of fit to cases (testing):")
     fit_quality(state_df["cases"].values[t1:],model_cases[:,t1:])
 
-    ## Make it all per pop
+    ## Make it all per pop for plotting.
     trajectories = 100*trajectories/(state_df["population"].values[None,None,:])
 
     ## Summarize the results

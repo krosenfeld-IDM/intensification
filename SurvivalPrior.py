@@ -37,6 +37,9 @@ def axes_setup(axes,inplace=True):
 
 def model_overview(state,imm_profile,sias,survival,sf,result,phi,r_ls):
 
+    '''This function takes the key outputs from the script and arranges them as an 
+    overview plot. See Appendix 2, Fig 1 in the paper. '''
+
     ## Set up the figure
     fig = plt.figure(figsize=(14,9))
     gs = gridspec.GridSpec(6, 3, figure=fig)
@@ -113,6 +116,10 @@ def model_overview(state,imm_profile,sias,survival,sf,result,phi,r_ls):
     return fig
 
 def smoothing_cost(theta,expI,cases,lam):
+    '''This is the objective function for the regression of expected
+    infections against cases. Theta is a time-correlated set of numbers 
+    that get logistic-transformed into a 0 to 1 scale-factor representing 
+    annualized reporting rates. See the discussion around Appendix 2, Fig 1. '''
     beta = 1./(1. + np.exp(-theta))
     f = beta*expI
     ll = np.sum((cases - f)**2)
@@ -120,6 +127,7 @@ def smoothing_cost(theta,expI,cases,lam):
     return ll+lp
 
 def smoothing_grad(theta,expI,cases,lam):
+    ''' Gradient of the objective function above for optimization. '''
     beta = 1./(1. + np.exp(-theta))
     f = beta*expI
     grad = 2.*(f-cases)*f*(1.-beta)
@@ -127,12 +135,17 @@ def smoothing_grad(theta,expI,cases,lam):
     return grad
 
 def smoothing_hessian(theta,expI,cases,lam):
+    ''' Hessian of the objective function above to quantify uncertainty. '''
     beta = 1./(1. + np.exp(-theta))
     hess = np.diag(beta*(1.-beta)*expI*((1.-2*beta)*(beta*expI-cases)+beta*(1-beta)*expI))
     hess += lam
     return 2.*hess
 
 def code_to_offset(c):
+
+    ''' Translation of SIA age ranges, in months (M) or
+    years (Y) to offset types. '''
+
     if c.endswith("M"):
         return DateOffset(months=int(c[:-1]))
     elif c.endswith("Y"):
@@ -140,6 +153,11 @@ def code_to_offset(c):
     return DateOffset(months=int(c))
 
 class CampaignCalendar(object):
+
+    '''This object encapulates SIA metadata (like how many doses were delivered, start and
+    end dates, etc.) and a table of eligibility by birth cohort. Partially eligible birth cohorts
+    are estimated to the nearest month and aggregating the birth seasonality profile (or using a
+    uniform distribution if no seasonality is provided). '''
 
     def __init__(self,cal,b_season=None):
 
@@ -196,10 +214,14 @@ class CampaignCalendar(object):
         else:
             cohorts *= 1./12.
 
-        ## Aggregate up and save.
+        ## Aggregate up and save into the 
+        ## probability(targeted | born in birth cohort b).
         self.pr_tb = cohorts.groupby(lambda t: t.year).sum()
 
     def __str__(self):
+
+        ''' Method to print in a sensible way. '''
+        
         out = "Campaign metadata:\n"+\
               self.md.__str__()+\
               "\nWith associated cohort coverage:\n"+\
@@ -207,6 +229,10 @@ class CampaignCalendar(object):
         return out
 
     def __iter__(self):
+
+        '''Organized iteration through the SIA names, meta data and
+        the eligibility column. '''
+
         name_gen = (c for c in self.pr_tb.columns)
         md_gen_exp = (r for _, r in self.md.iterrows())
         elig_gen_exp = (c for _, c in self.pr_tb.items())
@@ -216,8 +242,12 @@ def compute_profile(pI,epi,prA_given_I,
                     b_season,sias,
                     mcv1_effic=0.825,mcv2_effic=0.95,sia_vax_effic=0.8):
 
+    ''' This function evaluates the immunity profile, i.e. the recursive equation in
+    the paper's appendix 2 at a fixed value of pr(s = I | b) == pI '''
+
     ## Compute the cumulative infection probability for an
-    ## input destined to be infected fraction pI
+    ## input destined to be infected fraction pI, which can either be a
+    ## scalar or a vector across cohorts.
     if np.isscalar(pI):
         FprA_and_I = pI*\
             np.cumsum(prA_given_I.reindex(epi.index).fillna(method="bfill"),axis=1)
@@ -289,7 +319,8 @@ def compute_profile(pI,epi,prA_given_I,
 
 if __name__ == "__main__":
 
-	## Get the state name
+    ## Get the state name from command line input
+    ## otherwise stick with a default.
     state = " ".join(sys.argv[1:])
     if state == "":
         state = "lagos"
@@ -304,7 +335,7 @@ if __name__ == "__main__":
         _serialize = False
     state = state[0].rstrip()
 
-    ## Get the state's region for 
+    ## Get the state's region from the look up CSV for 
     ## reference.
     s_and_r = pd.read_csv(os.path.join("_data",
     					  "states_and_regions.csv"),
@@ -313,7 +344,8 @@ if __name__ == "__main__":
                          "region"].values[0] 
 
     ## Get the epi data from CSV, with some
-    ## data type parsing and reshaping.
+    ## data type parsing and reshaping into a multiindex
+    ## dataframe with state and time as levels.
     epi = pd.read_csv(os.path.join("_data",
                       "southern_states_epi_timeseries.csv"),
                       index_col=0,
@@ -334,7 +366,8 @@ if __name__ == "__main__":
     print(df)
 
 	## The birth seasonality profile (for estimating when
-    ## people become eligible for different vaccines).
+    ## people become eligible for different vaccines). This is
+    ## estimated via DHS and MICS data.
     b_season = pd.read_csv(os.path.join("_data",
     					   "birth_seasonality_profiles.csv"),
     					   index_col=0)\
@@ -351,7 +384,9 @@ if __name__ == "__main__":
     cal = cal.loc[cal["state"] == state]
     sias = CampaignCalendar(cal,b_season)
 
-    ## And get the age at infection inferences
+    ## And get the age at infection inferences, an output
+    ## from a multinomial regression on the granular data. See the 
+    ## discussion just under Appendix 2, Fig 1 for details.
     age_dists = pd.read_csv(os.path.join("_data",
     						"southern_age_at_infection.csv"),
     					index_col=0)\
@@ -360,7 +395,8 @@ if __name__ == "__main__":
     prA_given_I_var = age_dists.loc[region,"var"].unstack()
 
     ## Compute the profile with pI = 0 and pI = 0.1 to
-    ## find the balanced, normalized profile.
+    ## find the balanced, normalized profile, taking advantage
+    ## of the profile's linearity in terms of pI.
     ri_cov = df[["mcv1","mcv2"]].reindex(np.arange(1978, ## Intro year
                                     df.index[-1]+1,dtype=np.int32))
     ri_cov.loc[ri_cov.index[0],ri_cov.columns] = 0
@@ -386,7 +422,9 @@ if __name__ == "__main__":
     pr_inf = 1. - (imm_profile.sum(axis=1))
     prA_and_I = pr_inf.values[:,None]*(prA_given_I.reindex(pr_inf.index).fillna(method="bfill"))
 
-    ## And how much of that has already happened?
+    ## And how much of that has already happened? We use the age
+    ## at infection distribution to compute the expected infections in
+    ## before the current time.
     mask = np.zeros(prA_and_I.shape)
     mask[np.where(
         (prA_and_I.index.values[:,None] + prA_and_I.columns.values[None,:])\
@@ -431,7 +469,7 @@ if __name__ == "__main__":
             *(inf_after_t0**2)).loc[:df.index[0]-1].sum()
 
     ## Compute estimates of infectious populations. Start by making
-    ## a propogator from birth cohort to expected infection
+    ## a matrix mapping birth cohort to expected infections.
     T = prA_and_I.index[-1]+prA_and_I.columns[-1]-prA_and_I.index[0]+1
     PST = pd.DataFrame([np.hstack([np.zeros((i,)),
                                    prA_and_I.values[i,:],
@@ -440,23 +478,28 @@ if __name__ == "__main__":
                         index=prA_and_I.index,
                         columns=np.arange(prA_and_I.index[0],prA_and_I.index[0]+T,dtype=np.int32))
     
-    ## Calculate the expected infections
+    ## Calculate the expected infections and the variance from birth 
+    ## cohort uncertainty.
     expI = df["births"].reindex(PST.index).fillna(method="bfill").values[:,None]*PST
     varI = df["births_var"].reindex(PST.index).fillna(method="bfill").values[:,None]*(PST**2)
     phi = expI.sum(axis=0).loc[df.index]
 
-    ## And the least-squares reporting rate estimate
+    ## And the least-squares reporting rate estimate, as a simple initial
+    ## guess.
     r_ls = np.sum(phi.values*df["cases"].values)/(np.sum(phi.values**2))
 
     ## Then solve the smoothing problem
-    ## Start with the regularization matrix for the random walk
+    ## Start with the regularization matrix for the random walk, i.e. the
+    ## time correlated set of parameters which get logistic transformed into
+    ## the reporting rate.
     T = len(df)
     D2 = np.diag(T*[-2])+np.diag((T-1)*[1],k=1)+np.diag((T-1)*[1],k=-1)
     D2[0,2] = 1
     D2[-1,-3] = 1
     lam = np.dot(D2.T,D2)*((3.**4)/8.)*(df["cases"].var())
 
-    ## Solve the problem
+    ## Solve the problem, with initial guess being a constant
+    ## reporting rate (in the logit space).
     x0 = np.array(len(df)*[np.log(r_ls/(1.-r_ls))])
     result = minimize(lambda x: smoothing_cost(x,
                                 phi.values,
@@ -468,7 +511,7 @@ if __name__ == "__main__":
                       method="BFGS",
                       )
 
-    ## Unpack the results
+    ## Unpack the results, compute the uncertainty.
     df["rr"] = 1./(1. + np.exp(-result["x"]))
     df["fit"] = (df["rr"]*phi).values
     sig_nu2 = np.sum((df["cases"]-df["fit"])**2)/len(df)
@@ -479,7 +522,9 @@ if __name__ == "__main__":
     df["rr_var"] = (np.diag(cov))*((df["rr"]*(1.-df["rr"]))**2)
     df["rr_std"] = np.sqrt(df["rr_var"])
 
-    ## Add the S0 and variance estimate
+    ## Add the S0 and variance estimate, the latter is 
+    ## based on the average estimate fluctuation in susceptibility
+    ## each year. We store them in the table as a constant over time.
     df["S0"] = S0*np.ones((len(df),))
     df["S0_var"] = (phi.mean()**2)*np.ones((len(df),))
 
@@ -500,7 +545,7 @@ if __name__ == "__main__":
     print(df)
     df.to_pickle(os.path.join("pickle_jar","survival_prior.pkl"))
 
-    ## Finish from flags
+    ## Finish based on flags above.
     if _serialize:
         pickle.dump(fig, 
                     open(os.path.join("pickle_jar",
